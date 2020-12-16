@@ -1,0 +1,3 @@
+[submodule "src/test/library-checker-problems"]
+	path = src/test/library-checker-problems
+	url = git@github.com:yosupo06/library-checker-problems.git
