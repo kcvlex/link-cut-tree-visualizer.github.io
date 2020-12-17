@@ -30,6 +30,7 @@ interface DeleteEdgeEvent {
 
 interface RotateEvent {
     kind: 'Rotate';
+    id: number;
     nodes: LinkCutTreeNode[];
     added: EdgeType[];
     deleted: EdgeType[];
@@ -47,7 +48,7 @@ interface PushEvent {
 
 
 type LinkCutTreeEvent = AddNodeEvent | AddEdgeEvent | ApplyValueEvent | ToHeavyEvent |
-                        DeleteEdgeEvent | RotateEvent | ToggleEvent | PushEvent 
+                        DeleteEdgeEvent | RotateEvent | ToggleEvent | PushEvent;
 type EventGenerator = Generator<LinkCutTreeEvent, any, any>;
 
 export {
@@ -58,6 +59,8 @@ export {
     ToHeavyEvent,
     DeleteEdgeEvent,
     RotateEvent,
+    ToggleEvent,
+    PushEvent,
     LinkCutTreeEvent,
     EventGenerator,
 };

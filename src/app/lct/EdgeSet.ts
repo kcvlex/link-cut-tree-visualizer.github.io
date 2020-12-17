@@ -1,21 +1,20 @@
 import { LinkCutTree } from './LinkCutTree';
 import { LinkCutTreeNode } from './LinkCutTreeNode';
 
-type EdgeType = [ number, number, boolean ];
+type EdgeStatus = 'Left' | 'Right' | 'Light';
+type EdgeType = [ number, number, EdgeStatus ];
 
 function edge2str(edge: EdgeType) {
-    const [ src, dst, heavy ] = edge;
-    return [ src, dst, (heavy ? 1 : 0) ].map(e => Number(e).toString())
-                                        .join(':');
+    return edge.map(e => e + '').join(':');
 }
 
 function str2edge(s: string): EdgeType {
-    const lis = s.split(':')
-                 .map(e => parseInt(e))
-                 .filter(e => !isNaN(e));
+    const lis = s.split(':');
     if (lis.length === 3) {
-        const [ src, dst, heavy ] = lis;
-        return [ src, dst, (heavy !== 0) ];
+        const src = parseInt(lis[0]);
+        const dst = parseInt(lis[1]);
+        const status = lis[2] as EdgeStatus;
+        return [ src, dst, status ];
     } else {
         throw new Error("Invalid string");
     }
@@ -63,4 +62,4 @@ class EdgeSet {
 }
 
 
-export { EdgeType, EdgeSet }
+export { EdgeType, EdgeSet, EdgeStatus }

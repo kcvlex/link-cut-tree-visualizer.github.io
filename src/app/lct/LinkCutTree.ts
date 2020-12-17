@@ -9,13 +9,23 @@ class LinkCutTree {
         for (let i = 0; i < n; i++) this.nodes[i] = new LinkCutTreeNode(0, i);
     }
 
-    add(value: number): event.LinkCutTreeEvent {
+    appendNode(value: number): event.LinkCutTreeEvent {
         const sz = this.nodes.length;
         this.nodes.push(new LinkCutTreeNode(value, sz));
         return {
             kind: 'AddNode',
             node: this.nodes[sz],
         };
+    }
+
+    getSum(index: number) {
+        return this.nodes[index].sum;
+    }
+
+    *addVertex(index: number, value: number): event.EventGenerator {
+        yield* this.expose(index);
+        this.nodes[index].addVertex(value);
+        yield* this.nodes[index].push();
     }
 
     *expose(index: number): event.EventGenerator {
@@ -34,13 +44,15 @@ class LinkCutTree {
             r = cur;
             cur = cur.parent;
         }
+        yield* this.nodes[index].splay();
+        if (this.nodes[index].children[1] !== null) throw Error();
     }
 
     *evert(index: number): event.EventGenerator {
         yield* this.expose(index);
         const n = this.nodes[index];
-        yield n.toggle();
-        yield n.push();
+        yield* n.toggle();
+        yield* n.push();
     }
 
     *link(cIndex: number, pIndex: number): event.EventGenerator {
@@ -48,12 +60,16 @@ class LinkCutTree {
         yield* this.expose(cIndex);
         yield* this.expose(pIndex);
         const c = this.nodes[cIndex], p = this.nodes[pIndex];
+        if (isNonNull(c.parent)) throw new Error();
+        if (isNonNull(p.children[1])) throw new Error();
+        if (!c.isRoot()) throw new Error();
+        if (!p.isRoot()) throw new Error();
         c.parent = p;
         p.children[1] = c;
         p.update();
         yield {
             kind: 'AddEdge',
-            edge: [ c.id, p.id, true ],
+            edge: [ c.id, p.id, (p.children[0] === c ? 'Left' : 'Right') ],
         };
     }
 
@@ -67,23 +83,24 @@ class LinkCutTree {
             l.parent = null;
             yield {
                 kind: 'DeleteEdge',
-                edge: [ l.id, p.id, true ],
+                edge: [ l.id, p.id, 'Left' ],
             };
         } else {
             throw Error(`${index} is root node`);
         }
     }
 
-    *applyPath(index: number, value: number): event.EventGenerator {
+    *addPath(index: number, value: number): event.EventGenerator {
         yield* this.expose(index);
         const n = this.nodes[index];
-        n.applyPath(value);
+        n.addPath(value);
         yield {
             kind: 'ApplyValue',
             node: n,
             value,
         };
-        yield n.push();
+        n.update();
+        yield* n.push();
     }
 }
 

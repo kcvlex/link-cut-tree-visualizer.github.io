@@ -1,128 +1,39 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom";
 import Graph from "react-graph-vis";
 import { LinkCutTreeNode, isNonNull, NullableNode } from './lct/LinkCutTreeNode';
 import { LinkCutTree } from './lct/LinkCutTree';
 import * as event from './EventType.ts';
+import { DrawGraph, GraphState, tree, graphList } from './GraphState';
 import { EdgeType } from './lct/EdgeSet';
 
-function isLeftNode(n: LinkCutTreeNode) {
-    const p = n.parent!;
-    return p.children[0] === n;
+interface GraphWithIndex {
+    g: DrawGraph;
+    index: number;
 }
 
-function makeNodeLabel(n: LinkCutTreeNode) {
-    return `ID = ${n.id}`;
-    return `ID = ${n.id}\n` +
-        `value = ${n.value}\n` +
-        `sum = ${n.sum}\n` +
-        `lazyValue = ${n.lazyValue}\n` +
-        `rev = ${n.rev}\n`;
-}
-
-interface DrawNode {
-    id: number;
-    label: string;
-};
-
-interface DrawEdge {
-    from: number;
-    to: number;
-    dashes: boolean;
-    width: number;
-};
-
-interface DrawGraph {
-    nodes: DrawNode[];
-    edges: DrawEdge[];
-};
-
-function removeEdge(edges: DrawEdge[], item: EdgeType) {
-    for (const i in edges) {
-        if (item[0] !== edges[i].from) continue;
-        if (item[1] !== edges[i].to) continue;
-        edges.splice(parseInt(i), 1);
-        break;
-    }
-}
-
-function copyGraph(original: DrawGraph) {
-    const res: DrawGraph = { nodes: [], edges: [] };
-    original.nodes.forEach(e => res.nodes.push({ id: e.id, label: e.label }));
-    original.edges.forEach(e => res.edges.push({ from: e.from, to: e.to, dashes: e.dashes, width: e.width }));
-    return res;
-}
-
-function convertGraph(graph: DrawGraph, e: event.LinkCutTreeEvent): DrawGraph {
-    switch (e.kind) {
-        case 'AddNode':
-            const n = e.node;
-            graph.nodes.push({ id: n.id, label: makeNodeLabel(n) });
-            return graph;
-        case 'AddEdge':
-            const [ src, dst, heavy ] = e.edge;
-            graph.edges = graph.edges.filter(e => (e.from !== src || e.to !== dst));
-            graph.edges.push({ from: src, to: dst, dashes: !heavy, width: 3 });
-            return graph;
-        case 'ApplyValue':
-            graph.nodes[e.node.id].label = makeNodeLabel(e.node);
-            return graph;
-        case 'ToHeavy':
-            const preR = e.preRight, curR = e.curRight;
-            graph.edges.forEach(edge => {
-                if (isNonNull(preR)) {
-                    if (edge.from === preR.id) edge.dashes = true;
-                }
-                if (isNonNull(curR)) {
-                    if (edge.from === curR.id) edge.dashes = false;
-                }
-                console.log(edge);
-            });
-            return graph;
-        case 'DeleteEdge':
-            removeEdge(graph.edges, e.edge);
-            return graph;
-        case 'Rotate':
-            e.nodes.forEach(n => { graph.nodes[n.id].label = makeNodeLabel(n); });
-            e.deleted.forEach(de => { removeEdge(graph.edges, de); });
-            e.added.forEach(ae => { graph.edges.push({ from: ae[0], to: ae[1], dashes: !ae[2], width: 3 }); });
-            return graph;
-        case 'Toggle': return graph; // FIXME
-        case 'Push':
-            const ns = [ e.node, e.node.children[0], e.node.children[1] ];
-            for (const e of ns) {
-                if (isNonNull(e)) {
-                    graph.nodes[e.id].label = makeNodeLabel(e);
-                }
-            }
-            return graph;
-        default:
-            throw new Error('aaaaa');
-    }
-}
-const tree = new LinkCutTree(0);
-
-const initialGraph: DrawGraph = {
-    nodes: [],
-    edges: [],
-};
-
+let gen: event.EventGenerator = null;
 
 function App() {
-    const [ currentNode, setCurrentNode ] = useState(0);
-    const [ currentSrc, setCurrentSrc ] = useState(0);
-    const [ currentDst, setCurrentDst ] = useState(0);
+    const [ currentNodeValue, setCurrentNode ] = useState('0');
+    const [ currentSrc, setCurrentSrc ] = useState('0');
+    const [ currentDst, setCurrentDst ] = useState('0');
+    const [ currentExposeNode, setCurrentExposeNode ] = useState('0');
 
     const setCurrentNodeValue = (event) => {
-        setCurrentNode(parseInt(event.target.value));
+        setCurrentNode(event.target.value);
     };
 
     const setCurrentSrcValue = (event) => {
-        setCurrentSrc(parseInt(event.target.value));
+        setCurrentSrc(event.target.value);
     };
 
     const setCurrentDstValue = (event) => {
-        setCurrentDst(parseInt(event.target.value));
+        setCurrentDst(event.target.value);
+    };
+
+    const setCurrentExposeNodeValue = (event) => {
+        setCurrentExposeNode(event.target.value);
     };
 
     const events = {
@@ -132,32 +43,114 @@ function App() {
             console.log(edges);
         },
     };
-    // const initialGraph: DrawGraph = { nodes: [], edges: [] };
-    const [ graph, setGraph ] = useState(initialGraph);
+    
+    const [ graph, setGraph ] = useState({ g: graphList[0], index: 0 });
+
+    const clamp = (i: number, lb: number, ub: number) => {
+        return Math.min(ub, Math.max(lb, i));
+    };
+
+    const changeIndex = (delta) => {
+        setGraph(gi => {
+            const cIndex = gi.index;
+            const index = clamp(cIndex + delta, 0, graphList.length - 1);
+            return { g: graphList[index], index };
+        });
+    }
+
+    const updateGraph = (e: event.LinkCutTreeEvent): void => {
+        setGraph(_ => {
+            const latest = graphList[graphList.length - 1];
+            const g = latest.getNextGraphState(e);
+            const index = graphList.length;
+            graphList.push(g);
+            return { g, index };
+        });
+    };
 
     const consumeEventRec = (gen: event.EventGenerator): void => {
         const cur = gen.next();
         if (cur.done) return;
         console.log(cur.value.kind);
-        setGraph(pg => convertGraph(copyGraph(pg), cur.value));
+        updateGraph(cur.value);
         console.log(tree);
-        setTimeout(consumeEventRec, 100, gen);
+        setTimeout(consumeEventRec, 50, gen);
+    };
+
+    const consumeEventRecInit = (gen: event.EventGenerator): void => {
+        consumeEventRec(gen);
     };
 
     const consumeEvent = (e: event.LinkCutTreeEvent) => {
-        setGraph(pg => convertGraph(copyGraph(pg), e));
+        console.log(graph);
+        console.log(graphList);
+        updateGraph(e);
     };
+
+    const appendNode = () => {
+        const value = parseInt(currentExposeNode);
+        if (isNaN(value)) {
+            console.log("error");
+            return;
+        }
+        consumeEvent(tree.appendNode(value));
+    };
+
+    const linkEvent = () => {
+        const child = parseInt(currentSrc);
+        const parent = parseInt(currentDst);
+        if (isNaN(child) || isNaN(parent)) {
+            console.log("error");
+            return;
+        }
+        consumeEventRecInit(tree.link(child, parent));
+    };
+
+    const exposeEvent = () => {
+        const id = parseInt(currentExposeNode);
+        if (isNaN(id)) {
+            console.log("error");
+            return;
+        }
+        // gen = tree.expose(id);
+        consumeEventRecInit(tree.expose(id));
+    };
+
+    const consumeGen = () => {
+        if (gen === null) return;
+        const cur = gen.next();
+        if (cur.done) {
+            gen = null;
+            return;
+        }
+        consumeEvent(cur.value);
+    };
+
+    // initialize(0, false, consumeEvent, consumeEventRecInit);
 
     return (
       <div>
-        <input type='text' value={currentNode} onChange={setCurrentNodeValue} />
-        <button onClick={() => consumeEvent(tree.add(currentNode))}> Add Node </button>
-        <br/>
-        <input type='text' value={currentSrc} onChange={setCurrentSrcValue} />
-        <input type='text' value={currentDst} onChange={setCurrentDstValue} />
-        <button onClick={() => consumeEventRec(tree.link(currentSrc, currentDst))}> Link </button>
+        <div>
+          <button onClick={appendNode}> Add Node </button>
+        </div>
+        <div>
+          <input type='text' value={currentSrc} onChange={setCurrentSrcValue} />
+          <input type='text' value={currentDst} onChange={setCurrentDstValue} />
+          <button onClick={linkEvent}> Link </button>
+        </div>
+        <div>
+          <input type='text' value={currentExposeNode} onChange={setCurrentExposeNodeValue} />
+          <button onClick={exposeEvent}> Expose </button>
+        </div>
+        <div>
+          {graph.g.operation}
+        </div>
+        <div>
+          <button onClick={() => changeIndex(-1)}> &laquo; </button>
+          <button onClick={() => changeIndex(+1)}> &raquo; </button>
+        </div>
         <Graph
-          graph={graph}
+          graph={graph.g.graph}
           events={events}
           getNetwork={network => {
               console.log(network);
@@ -166,7 +159,6 @@ function App() {
       </div>
     );
 }
-
 
 const rootElement = document.getElementById("root");
 ReactDOM.render(<App />, rootElement);
