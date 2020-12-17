@@ -1,5 +1,5 @@
 import * as event from '../EventType';
-import { EdgeType, EdgeSet } from './EdgeSet';
+import { EdgeType, EdgeSet, EdgeStatus } from './EdgeSet';
 
 type NullableNode = LinkCutTreeNode | null;
 
@@ -40,10 +40,10 @@ class LinkCutTreeNode {
         this.children[0] = ch1;
     }
 
-    toggle(): event.LinkCutTreeEvent {
+    *toggle(): event.EventGenerator {
         this.swapChildren();
         this.rev = !this.rev;
-        return { 
+        yield { 
             kind: 'Toggle', 
             node: this 
         };
@@ -59,19 +59,21 @@ class LinkCutTreeNode {
         this.sum += n * this.sz;
     }
 
-    push(): event.LinkCutTreeEvent {
+    *push(): event.EventGenerator {
         for (const ch of this.children) {
             if (isNonNull(ch)) {
                 ch.addPath(this.lazyValue);
-                if (this.rev) ch.toggle();
+                if (this.rev) yield* ch.toggle();
             }
         }
         this.lazyValue = 0;
         this.rev = false;
-        return {
+        /*
+        yield {
             kind: 'Push',
             node: this,
         };
+        */
     }
 
     update(): void {
@@ -88,8 +90,7 @@ class LinkCutTreeNode {
     }
 
     // 0 if ccw
-    private rotate(dir: boolean, check: boolean = false): event.LinkCutTreeEvent {
-        if (check && (this.children[1] !== null)) throw new Error();
+    private *rotate(dir: boolean): event.EventGenerator {
         const nodeSet = new Set<LinkCutTreeNode>();
         const preSet = new EdgeSet();
         const postSet = new EdgeSet();
@@ -97,17 +98,20 @@ class LinkCutTreeNode {
         const addEdge = (set: EdgeSet, n: NullableNode) => {
             if (isNonNull(n)) {
                 nodeSet.add(n);
-                n.children.forEach(ch => {
+                n.children.forEach((ch, idx) => {
                     if (isNonNull(ch)) {
-                        set.add([ ch.id, n.id, true ]);
+                        const status = (idx === 0 ? 'Left' : 'Right') as EdgeStatus;
+                        set.add([ ch.id, n.id, status ]);
                         nodeSet.add(ch);
                     }
                 });
                 const p = n.parent;
                 if (isNonNull(p)) {
                     nodeSet.add(p);
-                    const heavy = (p.children[0] === n || p.children[1] === n);
-                    set.add([ n.id, p.id, heavy ]);
+                    const status = (p.children[0] === n ? 'Left' :
+                                    p.children[1] === n ? 'Right' : 'Light') as EdgeStatus;
+                    console.log(n.id, p.id, p.children, status);
+                    set.add([ n.id, p.id, status ]);
                 }
             }
         };
@@ -115,7 +119,6 @@ class LinkCutTreeNode {
         if (isNonNull(this.parent)) {
             const p = this.parent;
             const pp = this.parent.parent;
-            const popopo = (p.children[1] === null);
 
             addEdge(preSet, this);
             addEdge(preSet, p);
@@ -147,16 +150,13 @@ class LinkCutTreeNode {
             addEdge(postSet, this);
             addEdge(postSet, p);
             addEdge(postSet, pp);
-            if (popopo && !dir && (this.children[1] !== null)) throw new Error();
         } else {
             throw new Error("Don't rotate root node");
         }
 
-        if (check && this.children[1] !== null) throw new Error();
-
         const addedEdges = postSet.diff(preSet);
         const deletedEdges = preSet.diff(postSet);
-        return {
+        yield {
             kind: 'Rotate',
             id: this.id,
             nodes: Array.from(nodeSet.values()),
@@ -165,43 +165,35 @@ class LinkCutTreeNode {
         };
     }
 
-    *splay(check: boolean = false): event.EventGenerator {
-        this.push();
+    *splay(): event.EventGenerator {
+        yield* this.push();
         while (!this.isRoot()) {
             const p = this.parent!;
+            if (p.parent === p) throw new Error();
+            if (this.parent === this) throw new Error();
             if (p.isRoot()) {
-                yield p.push();
-                yield this.push();
+                yield* p.push();
+                yield* this.push();
                 if (p.children[0] === this) {
-                    if (check && (this.children[1] !== null)) throw new Error();
-                    yield this.rotate(true);
-                    if (check && (this.children[1] !== null)) throw new Error();
+                    yield* this.rotate(true);
                 } else if (p.children[1] === this) {
-                    if (check && (this.children[1] !== null)) throw new Error();
-                    yield this.rotate(false);
-                    if (check && (this.children[1] !== null)) throw new Error();
+                    yield* this.rotate(false);
                 } else {
                     throw Error("Unexcept");
                 }
             } else {
                 const pp = p.parent!;
-                yield pp.push();
-                yield p.push();
-                yield this.push();
+                yield* pp.push();
+                yield* p.push();
+                yield* this.push();
                 const dir1 = (pp.children[0] === p);
                 const dir2 = (p.children[0] === this);
                 if (dir1 === dir2) {
-                    if (check && (this.children[1] !== null)) throw new Error();
-                    yield p.rotate(dir1);
-                    if (check && (this.children[1] !== null)) throw new Error();
-                    yield this.rotate(dir1, check);
-                    if (check && (this.children[1] !== null)) throw new Error();
+                    yield* p.rotate(dir1);
+                    yield* this.rotate(dir1);
                 } else {
-                    if (check && (this.children[1] !== null)) throw new Error();
-                    yield this.rotate(dir2, check);
-                    if (check && (this.children[1] !== null)) throw new Error();
-                    yield this.rotate(dir1, check);
-                    if (check && (this.children[1] !== null)) throw new Error();
+                    yield* this.rotate(dir2);
+                    yield* this.rotate(dir1);
                 }
             }
         }

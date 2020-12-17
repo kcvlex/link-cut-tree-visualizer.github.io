@@ -44,6 +44,13 @@ class LinkCutTreeTest {
                     curType = 'Edges';
                     break;
                 case 'Edges':
+                    const saved = count;
+                    setTimeout(() => { 
+                        console.log(this.inputFilePath, saved, count, N);
+                        if (saved === count && count < N - 1) {
+                            throw new Error(count + ' ' + saved + ' ' + N);
+                        }
+                    }, 1000);
                     const [ u, v ] = line.split(' ').map(e => parseInt(e));
                     this.consumeGenerator(this.tree.link(u, v));
                     count++;
@@ -70,6 +77,7 @@ class LinkCutTreeTest {
                     } else {
                         throw new Error('a');
                     }
+                    count++;
                     break;
             }
         }
@@ -82,7 +90,6 @@ class LinkCutTreeTest {
             input: fs.createReadStream(this.answerFilePath),
             crlfDelay: Infinity,
         });
-        console.log(this.results);
         for await (const line of answerStream) {
             const ans = parseInt(line);
             res = (res && (this.results[index] === ans));

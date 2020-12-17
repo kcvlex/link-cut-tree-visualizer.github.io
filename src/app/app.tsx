@@ -12,24 +12,6 @@ interface GraphWithIndex {
     index: number;
 }
 
-function initialize(i: number,
-                    mode: boolean,
-                    consumer1: (arg: event.LinkCutTreeEvent) => void,
-                    consumer2: (arg: event.EventGenerator) => void) 
-{
-    if (mode) {
-        if (i + 1 == 6) return;
-        consumer2(tree.link(i, i + 1));
-        setTimeout(initialize, 300, i + 1, mode, consumer1, consumer2);
-    } else {
-        if (i == 6) {
-            initialize(i + 1, true, consumer1, consumer2);
-        } else {
-            consumer1(tree.add(i));
-            setTimeout(initialize, 300, i + 1, mode, consumer1, consumer2);
-        }
-    }
-}
 let gen: event.EventGenerator = null;
 
 function App() {
@@ -105,13 +87,13 @@ function App() {
         updateGraph(e);
     };
 
-    const addNode = () => {
+    const appendNode = () => {
         const value = parseInt(currentExposeNode);
         if (isNaN(value)) {
             console.log("error");
             return;
         }
-        consumeEvent(tree.add(value));
+        consumeEvent(tree.appendNode(value));
     };
 
     const linkEvent = () => {
@@ -130,8 +112,8 @@ function App() {
             console.log("error");
             return;
         }
-        gen = tree.expose(id);
-        // consumeEventRecInit(tree.expose(id));
+        // gen = tree.expose(id);
+        consumeEventRecInit(tree.expose(id));
     };
 
     const consumeGen = () => {
@@ -149,8 +131,7 @@ function App() {
     return (
       <div>
         <div>
-          <input type='text' value={currentNodeValue} onChange={setCurrentNodeValue} />
-          <button onClick={addNode}> Add Node </button>
+          <button onClick={appendNode}> Add Node </button>
         </div>
         <div>
           <input type='text' value={currentSrc} onChange={setCurrentSrcValue} />
@@ -163,11 +144,10 @@ function App() {
         </div>
         <div>
           {graph.g.operation}
-          <button onClick={() => changeIndex(-1)}> &laquo; </button>
-          <button onClick={() => changeIndex(+1)}> &raquo; </button>
         </div>
         <div>
-          <button onClick={consumeGen}> a </button>
+          <button onClick={() => changeIndex(-1)}> &laquo; </button>
+          <button onClick={() => changeIndex(+1)}> &raquo; </button>
         </div>
         <Graph
           graph={graph.g.graph}

@@ -30,16 +30,16 @@ function testcases(): TestcaseInfo[] {
 
 const cases = testcases();
 let counter = 0;
-//console.log(cases);
 for (const e of cases) {
     const casename = e[0];
     const input = e[1];
     const output = e[2];
+    if (casename.includes('max')) break;
+    if (casename.includes('random')) break;
     test(casename, async () => {
         const tester = new LinkCutTreeTest(input, output);
         const res = await tester.test();
         expect(res).toBe(true);
-    }, 5000 * 5);
-    counter++;
-    if (3 <= counter) break;
+    }, 5000);
+    //if (3 <= ++counter) break;
 }

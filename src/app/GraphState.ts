@@ -3,11 +3,37 @@ import Graph from "react-graph-vis";
 import { LinkCutTreeNode, isNonNull, NullableNode } from './lct/LinkCutTreeNode';
 import { LinkCutTree } from './lct/LinkCutTree';
 import * as event from './EventType.ts';
-import { EdgeType } from './lct/EdgeSet';
+import { EdgeType, EdgeStatus } from './lct/EdgeSet';
 
-function isLeftNode(n: LinkCutTreeNode) {
-    const p = n.parent!;
-    return p.children[0] === n;
+interface DrawNode {
+    id: number;
+    label: string;
+};
+
+interface DrawEdge {
+    from: number;
+    to: number;
+    dashes: boolean;
+    width: number;
+    color: string;
+};
+
+function getEdgeStatus(c: LinkCutTreeNode, p: LinkCutTreeNode): EdgeStatus {
+    if (c.parent !== p) throw new Error();
+    if (p.children[0] === c) return 'Left';
+    if (p.children[1] === c) return 'Right';
+    return 'Light';
+}
+
+const leftColor = 'red', rightColor = 'blue';
+function makeEdge(e: EdgeType) {
+    const [ src, dst, status ] = e;
+    const w = 3;
+    switch (status) {
+        case 'Left': return { from: src, to: dst, dashes: false, width: w, color: leftColor };
+        case 'Right': return { from: src, to: dst, dashes: false, width: w, color: rightColor };
+        case 'Light': return { from: src, to: dst, dashes: true, width: w, color: 'black' };
+    }
 }
 
 function makeNodeLabel(n: LinkCutTreeNode) {
@@ -21,17 +47,13 @@ function makeNodeTitle(n: LinkCutTreeNode) {
            `rev = ${n.rev}\n`;
 }
 
-interface DrawNode {
-    id: number;
-    label: string;
-};
-
-interface DrawEdge {
-    from: number;
-    to: number;
-    dashes: boolean;
-    width: number;
-};
+function eqDrawEdge(lhs: DrawEdge, rhs: DrawEdge) {
+    if (lhs.from !== rhs.from) return false;
+    if (lhs.to !== rhs.to) return false;
+    if (lhs.dashes !== rhs.dashes) return false;
+    if (lhs.color !== rhs.color) return false;
+    return true;
+}
 
 interface DrawGraph {
     nodes: DrawNode[];
@@ -50,13 +72,12 @@ class GraphState {
         const n = e.node;
         this.graph.nodes.push(
             { id: n.id, label: makeNodeLabel(n) });
+        this.operation = `Add Node ${n.id}`;
     }
 
     private handleAddEdge(e: event.AddEdgeEvent) {
-        const [ src, dst, heavy ] = e.edge;
-        this.graph.edges = this.graph.edges.filter(e => (e.from !== src || e.to !== dst));
-        this.graph.edges.push(
-            { from: src, to: dst, dashes: !heavy, width: 3 });
+        this.graph.edges.push(makeEdge(e.edge));
+        this.operation = `Link Node ${e.edge[0]} to ${e.edge[1]}`;
     }
 
     private handleToHeavy(e: event.ToHeavyEvent) {
@@ -64,8 +85,8 @@ class GraphState {
         let removeIndex = -1;
         this.graph.edges.forEach((edge, idx) => {
             if (isNonNull(preR)) {
-                if (edge.from === preR.id) edge.dashes = true;
-            }
+                if (edge.from === preR.id) this.graph.edges[idx] = makeEdge([ edge.from, edge.to, 'Light' ]);
+            } 
             if (isNonNull(curR)) {
                 if (edge.from === curR.id) removeIndex = idx;
             }
@@ -74,19 +95,26 @@ class GraphState {
         if (isNonNull(curR)) {
             const p = curR.parent;
             if (isNonNull(p)) {
-                this.graph.edges.push({ from: curR.id, to: p.id, dashes: false, width: 3 });
+                this.graph.edges.push(makeEdge([ curR.id, p.id, getEdgeStatus(curR, p) ]));
             }
         }
 
-        this.operation += ` preR.id === ${preR === null ? -1 : preR.id}`;
-        this.operation += ` curR.id === ${curR === null ? -1 : curR.id}`;
+        if (isNonNull(curR)) {
+            const p = curR.parent;
+            if (isNonNull(p)) {
+                this.operation = `Connect Node ${curR.id} to Node ${p.id}`;
+            } else {
+                this.operation = `Node ${curR.id} became root`;
+            }
+        } else {
+            this.operation = `Connect nullptr`;
+        }
     }
 
     private removeEdge(item: EdgeType) {
+        const e = makeEdge(item);
         for (const i in this.graph.edges) {
-            if (item[0] !== this.graph.edges[i].from) continue;
-            if (item[1] !== this.graph.edges[i].to) continue;
-            if (item[2] !== !this.graph.edges[i].dashes) continue;
+            if (!eqDrawEdge(e, this.graph.edges[i])) continue;
             this.graph.edges.splice(parseInt(i), 1);
             break;
         }
@@ -97,13 +125,11 @@ class GraphState {
     }
 
     private handleRotate(e: event.RotateEvent) {
+        console.log(e);
         e.nodes.forEach(n => { this.graph.nodes[n.id].label = makeNodeLabel(n); });
         e.deleted.forEach(de => { this.removeEdge(de); });
-        e.added.forEach(ae => { 
-            this.graph.edges.push(
-                { from: ae[0], to: ae[1], dashes: !ae[2], width: 3 });
-        });
-        this.operation += ` id = ${e.id}`;
+        e.added.forEach(ae => { this.graph.edges.push(makeEdge(ae)); });
+        this.operation = `Rotate Node ${e.id}`;
     }
 
     private handlePush(e: event.PushEvent) {
@@ -113,6 +139,16 @@ class GraphState {
                 this.graph.nodes[e.id].label = makeNodeLabel(e);
             }
         }
+    }
+
+    private handleToggle(e: event.ToggleEvent) {
+        const n = e.node;
+        for (const i in this.graph.edges) {
+            const tmp = this.graph.edges[i];
+            if (tmp.to !== n.id) continue;
+            this.graph.edges[i].color = (tmp.color === leftColor ? rightColor : leftColor);
+        }
+        this.operation = `Toggle Node ${n.id}`;
     }
 
     convert(e: event.LinkCutTreeEvent) {
@@ -137,7 +173,7 @@ class GraphState {
                 this.handleRotate(e);
                 break;
             case 'Toggle':
-                // FIXME
+                this.handleToggle(e);
                 break;
             case 'Push':
                 this.handlePush(e);
@@ -152,7 +188,7 @@ class GraphState {
         this.graph.nodes.forEach(e => res.nodes.push(
             { id: e.id, label: e.label }));
         this.graph.edges.forEach(e => res.edges.push(
-            { from: e.from, to: e.to, dashes: e.dashes, width: e.width }));
+            { from: e.from, to: e.to, dashes: e.dashes, width: e.width, color: e.color }));
         return res;
     }
 
